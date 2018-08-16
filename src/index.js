@@ -3,7 +3,12 @@ let mutationsCache = {};
 let storeInstance = '';
 
 import EventEmitter from './emitter';
+import Logger from './logger';
 
+
+const _innerPlugins = {
+  logger: Logger(),
+}
 
 const emitter = new EventEmitter();
 
@@ -179,9 +184,9 @@ export default function Store(store, options) {
       }
       Store.getInstance = this;
       if (plugins) {
-        console.log('ppp', plugins);
         plugins.forEach(element => {
-          element(Store.getInstance);
+          const pluginFunc = isString(element) ? _innerPlugins[element] : element;
+          pluginFunc(Store.getInstance);
         });
       }
       Object.defineProperty(this, 'state', {
