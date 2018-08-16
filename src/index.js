@@ -3,14 +3,9 @@ let mutationsCache = {};
 let storeInstance = '';
 
 import EventEmitter from './emitter';
-// const EventEmitter = require('./emitter').default;
+
+
 const emitter = new EventEmitter();
-
-
-// for dev tools in future
-function logger() {
-  return console.info.apply(this, arguments);
-}
 
 function isObject(obj) {
   return Object.prototype.toString.call(obj) === '[object Object]';
@@ -58,13 +53,12 @@ function createHelpers(actions, mutationsObj) {
         payload = type;
         type = 'update';
       }
-      // if ()
-      logger('%c prev state', 'color: #9E9E9E; font-weight: bold', this.data);
-      logger(`%c mutation: ${type}`, 'color: #03A9F4; font-weight: bold', payload, new Date().getTime());
+
+      const prevState = { ...this.data };
+      // emitter.emitEvent('beforeUpdateState', { state: { ...this.data }, mutation: { type, payload } });
       const finalMutation = mutations[type] ? mutations[type](this.data, payload) : payload;
       this.setData(finalMutation);
-      emitter.emitEvent('updateState', { ...this.data });
-      logger('%c next state', 'color: #4CAF50; font-weight: bold', this.data);
+      emitter.emitEvent('updateState', { state: {...this.data},  mutation: { type, payload }, prevState });
       // commit 的结果是一个同步行为
       return this.data;
     },
@@ -75,7 +69,7 @@ function createHelpers(actions, mutationsObj) {
         throw new Error('not found an action');
       }
       const self = this;
-      logger(`%c action ${type} dispatching`, 'color: #9E9E9E; font-weight: bold', payload);
+      emitter.emitEvent('dispatchAction', { type, payload });
       const res = actionFunc.call(self, {
         commit: this.commit.bind(self),
         dispatch: this.dispatch.bind(self),
@@ -110,7 +104,9 @@ export function storeHelper(actions, mutations, config) {
 
 function setDataByStateProps(mapStateToProps, data, config) {
     if (Array.isArray(mapStateToProps)) {
-        const outterState = mapStateToProps.reduce((p, v) => {
+        const outterState = mapStateToProps
+        .filter(d => !!d)
+        .reduce((p, v) => {
         p[v] = data[v];
         return p;
         }, {});
@@ -130,7 +126,7 @@ function setDataByStateProps(mapStateToProps, data, config) {
 
 
 export function connect(options) {
-  const { mapStateToProps } = options;
+  const { mapStateToProps = [] } = options;
   return function (config) {
     const _didMount = config.didMount;
     Object.assign(mutationsCache, config.mutations || {});
@@ -144,8 +140,8 @@ export function connect(options) {
         const initialData = setDataByStateProps(mapStateToProps, Store.getInstance.data, config);
         this.setData(initialData);
         if (mapStateToProps) {
-          emitter.addListener('updateState', (data = {}) => {
-            const nextData = setDataByStateProps(mapStateToProps, data, config);
+          emitter.addListener('updateState', ({state = {}}) => {
+            const nextData = setDataByStateProps(mapStateToProps, state, config);
             this.setData(nextData);
           });
         }
@@ -160,16 +156,34 @@ export function connect(options) {
 export default function Store(store, options) {
   const actions = store.actions || store;
   const mutations = store.mutations || {};
+  const plugins = store.plugins || [];
   Object.assign(actionsCache, actions);
   Object.assign(mutationsCache, mutations);
-  const state = store.state || {};  
+  const state = store.state || {};
   return function(config) {
     config.data = config.data || {};
-    Object.assign(config.data, config.state);
+    Object.assign(config.data, state, config.state);
     const originOnLoad = config.onLoad;
     // sync state for data
     config.onLoad = function() {
+      this.subscribe = function(subscriber, actionSubscriber) {
+        emitter.addListener('updateState', ({ state, mutation, prevState }) => {
+          console.log('mutationsObj', mutation);
+          subscriber(mutation, state, prevState);
+        });
+        if (actionSubscriber) {
+          emitter.addListener('dispatchAction', (action) => {
+            actionSubscriber(action);
+          });
+        }
+      }
       Store.getInstance = this;
+      if (plugins) {
+        console.log('ppp', plugins);
+        plugins.forEach(element => {
+          element(Store.getInstance);
+        });
+      }
       Object.defineProperty(this, 'state', {
         get: function() { return this.data; }
       });
