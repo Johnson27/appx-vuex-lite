@@ -129,6 +129,15 @@ function setDataByStateProps(mapStateToProps, data, config) {
     }
 }
 
+function setStoreDataByState(storeData, state = {}) {
+  const newData = Object.assign({}, storeData);
+  Object.keys(state).forEach((key) => {
+    if(newData.hasOwnProperty(key)) {
+      newData[key] = state[key];
+    }
+  });
+  return newData;
+}
 
 export function connect(options) {
   const { mapStateToProps = [] } = options;
@@ -183,6 +192,12 @@ export default function Store(store, options) {
         }
       }
       Store.getInstance = this;
+
+      emitter.addListener('updateState', ({state}) => {
+        const nextData = setStoreDataByState(this.data, state);
+        this.setData(nextData);
+      });
+
       if (plugins) {
         plugins.forEach(element => {
           const pluginFunc = isString(element) ? _innerPlugins[element] : element;
